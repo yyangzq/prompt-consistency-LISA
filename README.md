@@ -7,9 +7,9 @@ paraphrased prompts for the same image, LISA predicts one mask per prompt and
 uses their agreement as its confidence:
 
 $$
-s = \min_{i<j} \mathit{IoU}(M_i,M_j),
+s = \min_{i\ltj} \mathit{IoU}(M_i,M_j),
 \qquad
-\mathit{unconfident} = (s < \tau).
+\mathit{unconfident} = (s \lt \tau).
 $$
 
 The comparison below uses the six prompts supplied with each selected
