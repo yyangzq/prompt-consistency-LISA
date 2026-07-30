@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BitsAndBytesConfig, CLIPVisionModel
 
+from utils.prompt_agreement import summarize_prompt_agreement
 from utils.utils import (DEFAULT_IM_END_TOKEN, DEFAULT_IM_START_TOKEN,
                          DEFAULT_IMAGE_PATCH_TOKEN)
 
@@ -425,3 +426,94 @@ class LISAForCausalLM(LlavaLlamaForCausalLM):
                 pred_masks.append(pred_mask[:, 0])
 
         return output_ids, pred_masks
+
+    def evaluate_prompt_set(
+        self,
+        images_clip,
+        images,
+        input_ids_list,
+        resize_list,
+        original_size_list,
+        confidence_threshold=None,
+        max_new_tokens=32,
+        tokenizer=None,
+    ):
+        """Evaluate one image with multiple prompts and detect disagreement."""
+
+        if hasattr(input_ids_list, "shape"):
+            raise TypeError(
+                "input_ids_list must be a sequence of prompt tensors"
+            )
+        input_ids_list = tuple(input_ids_list)
+        if len(input_ids_list) < 2:
+            raise ValueError(
+                "evaluate_prompt_set requires at least two prompts"
+            )
+        if int(images_clip.shape[0]) != 1 or int(images.shape[0]) != 1:
+            raise ValueError(
+                "evaluate_prompt_set currently supports one image"
+            )
+        if len(resize_list) != 1 or len(original_size_list) != 1:
+            raise ValueError(
+                "resize_list and original_size_list must describe one image"
+            )
+
+        expected_shape = tuple(
+            int(value) for value in original_size_list[0]
+        )
+        output_ids_list = []
+        pred_masks_list = []
+        primary_masks = []
+        for input_ids in input_ids_list:
+            if input_ids.ndim != 2 or int(input_ids.shape[0]) != 1:
+                raise ValueError(
+                    "each prompt tensor must have shape [1, sequence_length]"
+                )
+            output_ids, pred_masks = self.evaluate(
+                images_clip,
+                images,
+                input_ids,
+                resize_list,
+                original_size_list,
+                max_new_tokens=max_new_tokens,
+                tokenizer=tokenizer,
+            )
+            if len(pred_masks) != 1:
+                raise ValueError(
+                    "each prompt must return one image-level mask group"
+                )
+            candidate_masks = pred_masks[0]
+            if int(candidate_masks.shape[0]) == 0:
+                primary_mask = torch.zeros(
+                    expected_shape, dtype=torch.bool, device="cpu"
+                )
+            else:
+                primary_mask = (
+                    candidate_masks[0].detach().float().cpu() > 0
+                )
+            if tuple(primary_mask.shape) != expected_shape:
+                raise ValueError(
+                    "primary mask shape {} != original image shape {}".format(
+                        tuple(primary_mask.shape), expected_shape
+                    )
+                )
+            output_ids_list.append(output_ids)
+            pred_masks_list.append(pred_masks)
+            primary_masks.append(primary_mask)
+
+        agreement = summarize_prompt_agreement(
+            primary_masks,
+            confidence_threshold=confidence_threshold,
+            empty_union_iou=1.0,
+        )
+        return {
+            "output_ids": output_ids_list,
+            "pred_masks": pred_masks_list,
+            "primary_masks": primary_masks,
+            "pairwise_mask_iou": agreement["pairwise_mask_iou"],
+            "minimum_pairwise_iou": agreement[
+                "minimum_pairwise_iou"
+            ],
+            "confidence_threshold": confidence_threshold,
+            "unconfident": agreement["unconfident"],
+        }
