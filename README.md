@@ -7,7 +7,7 @@ paraphrased prompts for the same image, LISA predicts one mask per prompt and
 uses their agreement as its confidence:
 
 $$
-s = \min_{i\ltj} \mathit{IoU}(M_i,M_j),
+s = \min_{i\lt j} \mathit{IoU}(M_i,M_j),
 \qquad
 \mathit{unconfident} = (s \lt \tau).
 $$
@@ -37,8 +37,15 @@ Download
 [LISA-7B-v1](https://huggingface.co/xinlai/LISA-7B-v1) into
 `weights/LISA-7B-v1`.
 
-Download the ReasonSeg test set and place its 779 image/annotation pairs in
-`test`:
+Open the
+[official ReasonSeg release folder](https://drive.google.com/drive/folders/125mewyg5Ao6tZ3ZdJ-1-E3n04LGVELqy?usp=sharing),
+download `test.zip`, and extract it from the repository root:
+
+```bash
+unzip /path/to/test.zip -d .
+```
+
+The archive creates `test/` with 779 image/annotation pairs:
 
 ```text
 LISA/
@@ -48,6 +55,13 @@ LISA/
 │   └── ...
 └── weights/
     └── LISA-7B-v1/
+```
+
+Confirm that both file counts are 779:
+
+```bash
+find test -maxdepth 1 -name '*.jpg' | wc -l
+find test -maxdepth 1 -name '*.json' | wc -l
 ```
 
 The evaluator selects the 366 annotations containing six prompts, then
